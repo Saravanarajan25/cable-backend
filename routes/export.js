@@ -98,23 +98,28 @@ router.get('/excel', authMiddleware, async (req, res) => {
             };
 
             // Populate monthly columns (Jan to Dec)
+            // Populate monthly columns (Jan to Dec)
             for (let m = 1; m <= 12; m++) {
-                if (m > reportingLimitMonth) {
-                    rowData[`month_${m}`] = ''; // Future months: Empty
-                } else {
-                    const payment = allYearPayments.find(p => p.home_id === home.home_id && p.month === m);
-                    if (payment && payment.status === 'paid') {
-                        // Show paid_date if paid
-                        if (payment.paid_date) {
-                            const d = new Date(payment.paid_date);
-                            // Format: day/month (e.g., 10/1)
-                            rowData[`month_${m}`] = `${d.getDate()}/${d.getMonth() + 1}`;
-                        } else {
-                            rowData[`month_${m}`] = 'Paid';
-                        }
+                const payment = allYearPayments.find(p => p.home_id === home.home_id && p.month === m);
+
+                if (payment && payment.status === 'paid') {
+                    // Show paid_date if paid, even if it's a future month
+                    if (payment.paid_date) {
+                        const d = new Date(payment.paid_date);
+                        // Format: DD-MM-YYYY
+                        const day = String(d.getDate()).padStart(2, '0');
+                        const month = String(d.getMonth() + 1).padStart(2, '0');
+                        const year = d.getFullYear();
+                        rowData[`month_${m}`] = `${day}-${month}-${year}`;
                     } else {
-                        // Show dash if unpaid or record doesn't exist yet
-                        rowData[`month_${m}`] = '-';
+                        rowData[`month_${m}`] = 'Paid';
+                    }
+                } else {
+                    // Not paid logic
+                    if (m > reportingLimitMonth) {
+                        rowData[`month_${m}`] = ''; // Future months: Empty
+                    } else {
+                        rowData[`month_${m}`] = '-'; // Past/Current months: Dash
                     }
                 }
             }

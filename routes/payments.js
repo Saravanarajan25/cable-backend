@@ -33,6 +33,7 @@ router.post('/mark-paid', authMiddleware, (req, res) => {
 
             if (existing) {
                 // Update existing record
+                // Ensures we update status to 'paid', set date to NOW, and ensure amount is set
                 db.run(
                     'UPDATE payments SET status = ?, paid_date = ?, collected_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
                     ['paid', paid_date, monthlyAmount, existing.id],
@@ -42,7 +43,7 @@ router.post('/mark-paid', authMiddleware, (req, res) => {
                             return res.status(500).json({ error: 'Internal server error' });
                         }
 
-                        // Fetch updated record
+                        // Fetch updated record to return
                         db.get('SELECT * FROM payments WHERE id = ?', [existing.id], (err, payment) => {
                             if (err) {
                                 console.error('Database error:', err);
@@ -53,7 +54,8 @@ router.post('/mark-paid', authMiddleware, (req, res) => {
                     }
                 );
             } else {
-                // Create new payment record
+                // Create new payment record for that specific month/year
+                // This handles cases where we are paying for a future month or a past month that wasn't pre-populated
                 db.run(
                     'INSERT INTO payments (home_id, month, year, status, paid_date, collected_amount) VALUES (?, ?, ?, ?, ?, ?)',
                     [home_id, month, year, 'paid', paid_date, monthlyAmount],
