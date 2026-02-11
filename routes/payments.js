@@ -173,8 +173,12 @@ router.get('/', authMiddleware, (req, res) => {
         const params = [month, year];
 
         if (status) {
-            paymentQuery += ' AND status = ?';
-            params.push(status);
+            // We do NOT filter by status in the SQL query anymore.
+            // Why? Because if we filter for 'unpaid', the DB returns nothing for paid homes.
+            // But we need to know they ARE paid so we don't default them to 'unpaid' in the map() below.
+            // filtering happens AFTER mapping.
+            // paymentQuery += ' AND status = ?';
+            // params.push(status);
         }
 
         const { fromDate, toDate } = req.query;
