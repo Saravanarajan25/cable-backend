@@ -99,36 +99,33 @@ router.get('/excel', authMiddleware, async (req, res) => {
 
             // Populate monthly columns (Jan to Dec)
             // Populate monthly columns (Jan to Dec)
-            // Populate monthly columns (Jan to Dec)
             for (let m = 1; m <= 12; m++) {
                 const payment = allYearPayments.find(p => p.home_id === home.home_id && p.month === m);
 
-                let cellValue = '';
                 if (payment && payment.status === 'paid') {
-                    // Show paid_date if paid
+                    // Show paid_date if paid, even if it's a future month
                     if (payment.paid_date) {
                         const d = new Date(payment.paid_date);
                         // Format: DD-MM-YYYY
-                        const dayStr = String(d.getDate()).padStart(2, '0');
-                        const monthStr = String(d.getMonth() + 1).padStart(2, '0');
-                        const yearStr = d.getFullYear();
-                        cellValue = `${dayStr}-${monthStr}-${yearStr}`;
+                        const day = String(d.getDate()).padStart(2, '0');
+                        const month = String(d.getMonth() + 1).padStart(2, '0');
+                        const year = d.getFullYear();
+                        rowData[`month_${m}`] = `${day}-${month}-${year}`;
                     } else {
-                        cellValue = 'Paid';
+                        rowData[`month_${m}`] = 'Paid';
                     }
                 } else {
                     // Not paid logic
                     if (m > reportingLimitMonth) {
-                        cellValue = ''; // Future months: Empty
+                        rowData[`month_${m}`] = ''; // Future months: Empty
                     } else {
-                        cellValue = '-'; // Past/Current months: Dash
+                        rowData[`month_${m}`] = '-'; // Past/Current months: Dash
                     }
                 }
-
-                rowData[`month_${m}`] = cellValue;
             }
             worksheet.addRow(rowData);
         });
+
 
         // Style header row
         worksheet.getRow(1).font = { bold: true };
