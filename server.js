@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { initDatabase } = require('./database');
+// const { initDatabase } = require('./database');
 
 const authRoutes = require('./routes/auth');
 const homesRoutes = require('./routes/homes');
@@ -9,6 +9,23 @@ const paymentsRoutes = require('./routes/payments');
 const dashboardRoutes = require('./routes/dashboard');
 const exportRoutes = require('./routes/export');
 const { startBillingService } = require('./services/billingService');
+
+const fs = require('fs');
+const path = require('path');
+const { pool } = require('./db');
+
+// Initialize database from schema.sql
+const initDatabase = async () => {
+    try {
+        const schemaPath = path.join(__dirname, 'schema.sql');
+        const schema = fs.readFileSync(schemaPath, 'utf8');
+        await pool.query(schema);
+        console.log('✅ Database schema initialized');
+    } catch (err) {
+        console.error('Failed to initialize database:', err);
+        throw err;
+    }
+};
 
 const app = express();
 const PORT = process.env.PORT || 3001;

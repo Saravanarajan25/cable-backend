@@ -1,25 +1,34 @@
 const bcrypt = require('bcryptjs');
-const { db, initDatabase } = require('./database');
+const fs = require('fs');
+const path = require('path');
+const { pool, query } = require('./db');
 
 const seedData = async () => {
-    await initDatabase();
+    // Initialize schema first
+    try {
+        const schemaPath = path.join(__dirname, 'schema.sql');
+        const schema = fs.readFileSync(schemaPath, 'utf8');
+        await query(schema);
+        console.log('✅ Database schema initialized');
+    } catch (err) {
+        console.error('Failed to initialize database:', err);
+        throw err;
+    }
 
     console.log('\n🌱 Seeding database...\n');
 
     // Create admin user
     const hashedPassword = await bcrypt.hash('admin123', 10);
 
-    db.run(
-        'INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)',
-        ['admin', hashedPassword],
-        (err) => {
-            if (err) {
-                console.error('Error creating admin user:', err);
-            } else {
-                console.log('✅ Admin user created (username: admin, password: admin123)');
-            }
-        }
-    );
+    try {
+        await query(
+            'INSERT INTO users (username, password) VALUES ($1, $2) ON CONFLICT (username) DO NOTHING',
+            ['admin', hashedPassword]
+        );
+        console.log('✅ Admin user created (username: admin, password: admin123)');
+    } catch (err) {
+        console.error('Error creating admin user:', err);
+    }
 
     // Sample homes data
     const homes = [
@@ -41,20 +50,17 @@ const seedData = async () => {
     ];
 
     // Insert homes
-    const homePromises = homes.map(home => {
-        return new Promise((resolve, reject) => {
-            db.run(
-                'INSERT OR IGNORE INTO homes (home_id, customer_name, phone, set_top_box_id, monthly_amount) VALUES (?, ?, ?, ?, ?)',
-                [home.home_id, home.customer_name, home.phone, home.set_top_box_id, home.monthly_amount],
-                (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                }
+    for (const home of homes) {
+        try {
+            await query(
+                'INSERT INTO homes (home_id, customer_name, phone, set_top_box_id, monthly_amount) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (home_id) DO NOTHING',
+                [home.home_id, home.customer_name, home.phone, home.set_top_box_id, home.monthly_amount]
             );
-        });
-    });
+        } catch (err) {
+            console.error(`Error inserting home ${home.home_id}:`, err);
+        }
+    }
 
-    await Promise.all(homePromises);
     console.log(`✅ Created ${homes.length} sample homes`);
 
     // Create some sample payments for current month
@@ -65,22 +71,19 @@ const seedData = async () => {
     // Mark some homes as paid (about 60% paid)
     const paidHomes = [101, 102, 104, 105, 107, 108, 110, 112, 114];
 
-    const paymentPromises = paidHomes.map(home_id => {
-        return new Promise((resolve, reject) => {
+    for (const home_id of paidHomes) {
+        try {
             const home = homes.find(h => h.home_id === home_id);
             const paidDate = new Date(currentYear, currentMonth - 1, Math.floor(Math.random() * 28) + 1).toISOString();
-            db.run(
-                'INSERT OR IGNORE INTO payments (home_id, month, year, status, paid_date, collected_amount) VALUES (?, ?, ?, ?, ?, ?)',
-                [home_id, currentMonth, currentYear, 'paid', paidDate, home.monthly_amount],
-                (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                }
+            await query(
+                'INSERT INTO payments (home_id, month, year, status, paid_date, collected_amount) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (home_id, month, year) DO NOTHING',
+                [home_id, currentMonth, currentYear, 'paid', paidDate, home.monthly_amount]
             );
-        });
-    });
+        } catch (err) {
+            console.error(`Error inserting payment for home ${home_id}:`, err);
+        }
+    }
 
-    await Promise.all(paymentPromises);
     console.log(`✅ Created ${paidHomes.length} paid payments for current month`);
 
     console.log('\n✨ Database seeding completed!\n');
@@ -88,7 +91,7 @@ const seedData = async () => {
     console.log('   Username: admin');
     console.log('   Password: admin123\n');
 
-    db.close();
+    await pool.end();
     process.exit(0);
 };
 

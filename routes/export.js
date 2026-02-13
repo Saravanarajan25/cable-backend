@@ -1,6 +1,6 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const { db } = require('../database');
+const { query } = require('../db');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
@@ -15,23 +15,13 @@ router.get('/excel', authMiddleware, async (req, res) => {
 
     try {
         // Get all homes
-        const homes = await new Promise((resolve, reject) => {
-            db.all('SELECT * FROM homes ORDER BY home_id ASC', [], (err, rows) => {
-                if (err) reject(err);
-                else resolve(rows);
-            });
-        });
+        const { rows: homes } = await query('SELECT * FROM homes ORDER BY home_id ASC');
 
         // Get all payments for the specified year
-        const paymentQuery = 'SELECT * FROM payments WHERE year = ?';
-        const params = [year];
-
-        const allYearPayments = await new Promise((resolve, reject) => {
-            db.all(paymentQuery, params, (err, rows) => {
-                if (err) reject(err);
-                else resolve(rows);
-            });
-        });
+        const { rows: allYearPayments } = await query(
+            'SELECT * FROM payments WHERE year = $1',
+            [year]
+        );
 
         // Business Logic for Month-Based Behavior
         const now = new Date();
@@ -45,8 +35,7 @@ router.get('/excel', authMiddleware, async (req, res) => {
         if (selectedYearInt < currentYear) {
             reportingLimitMonth = 12; // Show all months for past years
         } else if (selectedYearInt === currentYear) {
-            // For the current year, show up to the month selected (or current month if we want to be safe)
-            // But the requirement says "when the cable operator downloads... file contains payment dates from January up to the current month"
+            // For the current year, show up to the month selected
             reportingLimitMonth = currentMonth;
         } else {
             reportingLimitMonth = 0; // Future years show nothing
@@ -97,7 +86,6 @@ router.get('/excel', authMiddleware, async (req, res) => {
                 monthly_amount: home.monthly_amount
             };
 
-            // Populate monthly columns (Jan to Dec)
             // Populate monthly columns (Jan to Dec)
             for (let m = 1; m <= 12; m++) {
                 const payment = allYearPayments.find(p => p.home_id === home.home_id && p.month === m);
