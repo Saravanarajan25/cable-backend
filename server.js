@@ -21,7 +21,7 @@ console.log(`  FRONTEND_URL: ${FRONTEND_URL}`);
 console.log(`  JWT_SECRET: ${process.env.JWT_SECRET ? '***SET***' : '***NOT SET***'}`);
 
 // Connect to MongoDB
-connectDB();
+// connectDB(); // Moved to startup sequence to verify connection first
 
 // CORS Configuration
 const allowedOrigins = [
@@ -95,23 +95,37 @@ app.use((err, req, res, next) => {
 
 // Start server
 // Start server
-app.listen(PORT, async () => {
-    // Ensure Admin User Exists
+// Start server
+const startServer = async () => {
     try {
-        const bcrypt = require('bcryptjs');
-        const User = require('./models/User');
-        const adminExists = await User.findOne({ username: 'admin' });
-        if (!adminExists) {
-            const hashedPassword = await bcrypt.hash('admin123', 10);
-            await User.create({ username: 'admin', password: hashedPassword });
-            console.log('✅ Admin user created (auto-setup)');
-        }
-    } catch (err) {
-        console.error('❌ Failed to check/create admin user:', err);
-    }
+        await connectDB();
 
-    startBillingService();
-    console.log(`\n🚀 CablePay Backend Server running on http://localhost:${PORT}`);
-    console.log(`📊 API endpoints available at http://localhost:${PORT}/api`);
-    console.log(`\n✅ Ready to accept requests\n`);
-});
+        app.listen(PORT, async () => {
+            // Ensure Admin User Exists
+            try {
+                const bcrypt = require('bcryptjs');
+                const User = require('./models/User');
+                const adminExists = await User.findOne({ username: 'admin' });
+                if (!adminExists) {
+                    const hashedPassword = await bcrypt.hash('admin123', 10);
+                    await User.create({ username: 'admin', password: hashedPassword });
+                    console.log('✅ Admin user created (auto-setup)');
+                } else {
+                    console.log('ℹ️ Admin user verified');
+                }
+            } catch (err) {
+                console.error('❌ Failed to check/create admin user:', err);
+            }
+
+            startBillingService();
+            console.log(`\n🚀 CablePay Backend Server running on http://localhost:${PORT}`);
+            console.log(`📊 API endpoints available at http://localhost:${PORT}/api`);
+            console.log(`\n✅ Ready to accept requests\n`);
+        });
+    } catch (err) {
+        console.error('Failed to connect to DB', err);
+        process.exit(1);
+    }
+};
+
+startServer();
