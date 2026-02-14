@@ -1,5 +1,6 @@
 const express = require('express');
-const { query } = require('../db');
+const Home = require('../models/Home');
+const Payment = require('../models/Payment');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
@@ -12,25 +13,24 @@ router.get('/:homeId', authMiddleware, async (req, res) => {
     const currentYear = currentDate.getFullYear();
 
     try {
-        const { rows: homeRows } = await query('SELECT * FROM homes WHERE home_id = $1', [homeId]);
-        const home = homeRows[0];
+        const home = await Home.findOne({ home_id: homeId }).lean();
 
         if (!home) {
             return res.status(404).json({ error: 'Home not found' });
         }
 
         // Get current month payment status
-        const { rows: paymentRows } = await query(
-            'SELECT * FROM payments WHERE home_id = $1 AND month = $2 AND year = $3',
-            [homeId, currentMonth, currentYear]
-        );
-        const payment = paymentRows[0];
+        const payment = await Payment.findOne({
+            home_id: homeId,
+            month: currentMonth,
+            year: currentYear
+        }).lean();
 
         res.json({
             ...home,
             payment_status: payment ? payment.status : 'unpaid',
             paid_date: payment ? payment.paid_date : null,
-            collected_amount: payment ? payment.collected_amount : 0
+            collected_amount: (payment && payment.status === 'paid') ? home.monthly_amount : 0
         });
     } catch (err) {
         console.error('Database error:', err);
@@ -47,28 +47,29 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     try {
-        const insertQuery = `
-            INSERT INTO homes (home_id, customer_name, phone, set_top_box_id, monthly_amount)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING *
-        `;
-
-        const { rows } = await query(insertQuery, [home_id, customer_name, phone, set_top_box_id, monthly_amount]);
-        const home = rows[0];
+        const home = await Home.create({
+            home_id,
+            customer_name,
+            phone,
+            set_top_box_id,
+            monthly_amount
+        });
 
         // Immediately create a payment record for the current month
         const now = new Date();
         const currentMonth = now.getMonth() + 1;
         const currentYear = now.getFullYear();
 
-        await query(
-            'INSERT INTO payments (home_id, month, year, status, collected_amount) VALUES ($1, $2, $3, $4, $5)',
-            [home.home_id, currentMonth, currentYear, 'unpaid', 0]
-        );
+        await Payment.create({
+            home_id: home.home_id,
+            month: currentMonth,
+            year: currentYear,
+            status: 'unpaid'
+        });
 
         res.status(201).json(home);
     } catch (err) {
-        if (err.code === '23505') { // Unique violation code in Postgres
+        if (err.code === 11000) { // Duplicate key error in Mongoose
             return res.status(400).json({ error: 'A home with this ID already exists' });
         }
         console.error('Database error:', err);
@@ -86,20 +87,22 @@ router.put('/:homeId', authMiddleware, async (req, res) => {
     }
 
     try {
-        const updateQuery = `
-            UPDATE homes 
-            SET customer_name = $1, phone = $2, set_top_box_id = $3, monthly_amount = $4, updated_at = CURRENT_TIMESTAMP
-            WHERE home_id = $5
-            RETURNING *
-        `;
+        const home = await Home.findOneAndUpdate(
+            { home_id: homeId },
+            {
+                customer_name,
+                phone,
+                set_top_box_id,
+                monthly_amount
+            },
+            { new: true } // Return updated document
+        );
 
-        const { rows, rowCount } = await query(updateQuery, [customer_name, phone, set_top_box_id, monthly_amount, homeId]);
-
-        if (rowCount === 0) {
+        if (!home) {
             return res.status(404).json({ error: 'Home not found' });
         }
 
-        res.json(rows[0]);
+        res.json(home);
     } catch (err) {
         console.error('Database error during update:', err);
         return res.status(500).json({ error: 'Internal server error' });
@@ -112,12 +115,12 @@ router.delete('/:homeId', authMiddleware, async (req, res) => {
 
     try {
         // First delete related payments
-        await query('DELETE FROM payments WHERE home_id = $1', [homeId]);
+        await Payment.deleteMany({ home_id: homeId });
 
         // Then delete home
-        const { rowCount } = await query('DELETE FROM homes WHERE home_id = $1', [homeId]);
+        const result = await Home.deleteOne({ home_id: homeId });
 
-        if (rowCount === 0) {
+        if (result.deletedCount === 0) {
             return res.status(404).json({ error: 'Home not found' });
         }
 

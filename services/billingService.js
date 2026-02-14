@@ -1,4 +1,5 @@
-const { query } = require('../db');
+const Home = require('../models/Home');
+const Payment = require('../models/Payment');
 
 /**
  * Ensures all homes have a payment record for the current month.
@@ -12,25 +13,35 @@ const initMonthlyReset = async () => {
     console.log(`[BillingService] Running monthly reset check for ${currentMonth}/${currentYear}...`);
 
     try {
-        // SQL to insert missing payment records for the current month
-        // Postgres syntax: use $1, $2, etc.
-        const sql = `
-            INSERT INTO payments (home_id, month, year, status, collected_amount)
-            SELECT home_id, $1, $2, 'unpaid', 0 
-            FROM homes 
-            WHERE home_id NOT IN (
-                SELECT home_id FROM payments WHERE month = $3 AND year = $4
-            )
-        `;
+        // Get all homes
+        const homes = await Home.find().lean();
 
-        const { rowCount } = await query(sql, [currentMonth, currentYear, currentMonth, currentYear]);
+        // Get all existing payments for this month
+        const existingPayments = await Payment.find({
+            month: currentMonth,
+            year: currentYear
+        }).lean();
 
-        if (rowCount > 0) {
-            console.log(`[BillingService] Successfully initialized ${rowCount} new payment records for ${currentMonth}/${currentYear}.`);
+        // Find homes without payment records
+        const homesWithoutPayment = homes.filter(home =>
+            !existingPayments.some(p => p.home_id === home.home_id)
+        );
+
+        if (homesWithoutPayment.length > 0) {
+            const newPayments = homesWithoutPayment.map(home => ({
+                home_id: home.home_id,
+                month: currentMonth,
+                year: currentYear,
+                status: 'unpaid'
+            }));
+
+            await Payment.insertMany(newPayments);
+            console.log(`[BillingService] Successfully initialized ${newPayments.length} new payment records for ${currentMonth}/${currentYear}.`);
+            return newPayments.length;
         } else {
             console.log(`[BillingService] No new records needed for ${currentMonth}/${currentYear}.`);
+            return 0;
         }
-        return rowCount;
     } catch (err) {
         console.error('[BillingService] Error creating monthly records:', err);
         throw err;

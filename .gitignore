@@ -1,2 +1,15 @@
-.env
+# Legacy & Temporary
+seed.js
+database.js
+schema.sql
+database/
+verify_*.js
+test_*.js
+*.log
+*.db
+*.cjs
+
+# Dependencies
 node_modules
+.env
+.DS_Store

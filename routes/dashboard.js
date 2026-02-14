@@ -1,5 +1,6 @@
 const express = require('express');
-const { query } = require('../db');
+const Home = require('../models/Home');
+const Payment = require('../models/Payment');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
@@ -13,39 +14,80 @@ router.get('/stats', async (req, res) => {
 
     try {
         // Get total homes count
-        const { rows: totalRows } = await query('SELECT COUNT(*) as total FROM homes');
-        const total = parseInt(totalRows[0].total);
+        const total = await Home.countDocuments();
 
         // Get paid count for the CURRENT month/year
-        const { rows: paidRows } = await query(
-            'SELECT COUNT(*) as paid FROM payments WHERE month = $1 AND year = $2 AND status = $3',
-            [currentMonth, currentYear, 'paid']
-        );
-        const paid = parseInt(paidRows[0].paid);
+        const paid = await Payment.countDocuments({
+            month: currentMonth,
+            year: currentYear,
+            status: 'paid'
+        });
+
         const unpaid = total - paid;
 
         // Get total collected amount for CURRENT month
-        const { rows: collectedRows } = await query(
-            'SELECT SUM(collected_amount) as total_collected FROM payments WHERE month = $1 AND year = $2 AND status = $3',
-            [currentMonth, currentYear, 'paid']
-        );
+        const collectedResult = await Payment.aggregate([
+            {
+                $match: {
+                    month: currentMonth,
+                    year: currentYear,
+                    status: 'paid'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'homes',
+                    localField: 'home_id',
+                    foreignField: 'home_id',
+                    as: 'home'
+                }
+            },
+            { $unwind: '$home' },
+            {
+                $group: {
+                    _id: null,
+                    total_collected: { $sum: '$home.monthly_amount' }
+                }
+            }
+        ]);
+        const total_collected = collectedResult.length > 0 ? collectedResult[0].total_collected : 0;
+
 
         // Get total PENDING amount for CURRENT month
-        const pendingQuery = `
-            SELECT SUM(h.monthly_amount) as total_pending 
-            FROM payments p 
-            JOIN homes h ON p.home_id = h.home_id 
-            WHERE p.month = $1 AND p.year = $2 AND p.status = 'unpaid'
-        `;
-
-        const { rows: pendingRows } = await query(pendingQuery, [currentMonth, currentYear]);
+        const pendingResult = await Payment.aggregate([
+            {
+                $match: {
+                    month: currentMonth,
+                    year: currentYear,
+                    status: 'unpaid'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'homes',
+                    localField: 'home_id',
+                    foreignField: 'home_id',
+                    as: 'home'
+                }
+            },
+            {
+                $unwind: '$home'
+            },
+            {
+                $group: {
+                    _id: null,
+                    total_pending: { $sum: '$home.monthly_amount' }
+                }
+            }
+        ]);
+        const total_pending = pendingResult.length > 0 ? pendingResult[0].total_pending : 0;
 
         res.json({
             total,
             paid,
             unpaid,
-            total_collected: collectedRows[0].total_collected || 0,
-            total_pending: pendingRows[0].total_pending || 0
+            total_collected,
+            total_pending
         });
     } catch (err) {
         console.error('Database error:', err);

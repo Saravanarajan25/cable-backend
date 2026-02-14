@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-// const { initDatabase } = require('./database');
+const connectDB = require('./db');
 
 const authRoutes = require('./routes/auth');
 const homesRoutes = require('./routes/homes');
@@ -9,23 +9,6 @@ const paymentsRoutes = require('./routes/payments');
 const dashboardRoutes = require('./routes/dashboard');
 const exportRoutes = require('./routes/export');
 const { startBillingService } = require('./services/billingService');
-
-const fs = require('fs');
-const path = require('path');
-const { pool } = require('./db');
-
-// Initialize database from schema.sql
-const initDatabase = async () => {
-    try {
-        const schemaPath = path.join(__dirname, 'schema.sql');
-        const schema = fs.readFileSync(schemaPath, 'utf8');
-        await pool.query(schema);
-        console.log('✅ Database schema initialized');
-    } catch (err) {
-        console.error('Failed to initialize database:', err);
-        throw err;
-    }
-};
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -36,6 +19,9 @@ console.log('[Server] Environment Configuration:');
 console.log(`  PORT: ${PORT}`);
 console.log(`  FRONTEND_URL: ${FRONTEND_URL}`);
 console.log(`  JWT_SECRET: ${process.env.JWT_SECRET ? '***SET***' : '***NOT SET***'}`);
+
+// Connect to MongoDB
+connectDB();
 
 // CORS Configuration
 const allowedOrigins = [
@@ -107,17 +93,25 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// Initialize database and start server
-initDatabase()
-    .then(() => {
-        startBillingService();
-        app.listen(PORT, () => {
-            console.log(`\n🚀 CablePay Backend Server running on http://localhost:${PORT}`);
-            console.log(`📊 API endpoints available at http://localhost:${PORT}/api`);
-            console.log(`\n✅ Ready to accept requests\n`);
-        });
-    })
-    .catch((err) => {
-        console.error('Failed to initialize database:', err);
-        process.exit(1);
-    });
+// Start server
+// Start server
+app.listen(PORT, async () => {
+    // Ensure Admin User Exists
+    try {
+        const bcrypt = require('bcryptjs');
+        const User = require('./models/User');
+        const adminExists = await User.findOne({ username: 'admin' });
+        if (!adminExists) {
+            const hashedPassword = await bcrypt.hash('admin123', 10);
+            await User.create({ username: 'admin', password: hashedPassword });
+            console.log('✅ Admin user created (auto-setup)');
+        }
+    } catch (err) {
+        console.error('❌ Failed to check/create admin user:', err);
+    }
+
+    startBillingService();
+    console.log(`\n🚀 CablePay Backend Server running on http://localhost:${PORT}`);
+    console.log(`📊 API endpoints available at http://localhost:${PORT}/api`);
+    console.log(`\n✅ Ready to accept requests\n`);
+});

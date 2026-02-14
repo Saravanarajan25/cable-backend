@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { query } = require('../db');
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -14,8 +14,7 @@ router.post('/login', async (req, res) => {
     }
 
     try {
-        const { rows } = await query('SELECT * FROM users WHERE username = $1', [username]);
-        const user = rows[0];
+        const user = await User.findOne({ username });
 
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -28,7 +27,7 @@ router.post('/login', async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user.id, username: user.username },
+            { id: user._id, username: user.username },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );

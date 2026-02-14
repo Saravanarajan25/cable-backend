@@ -1,6 +1,7 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
-const { query } = require('../db');
+const Home = require('../models/Home');
+const Payment = require('../models/Payment');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
@@ -15,13 +16,10 @@ router.get('/excel', authMiddleware, async (req, res) => {
 
     try {
         // Get all homes
-        const { rows: homes } = await query('SELECT * FROM homes ORDER BY home_id ASC');
+        const homes = await Home.find().sort({ home_id: 1 }).lean();
 
         // Get all payments for the specified year
-        const { rows: allYearPayments } = await query(
-            'SELECT * FROM payments WHERE year = $1',
-            [year]
-        );
+        const allYearPayments = await Payment.find({ year: parseInt(year) }).lean();
 
         // Business Logic for Month-Based Behavior
         const now = new Date();

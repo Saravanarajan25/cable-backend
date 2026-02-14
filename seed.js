@@ -1,31 +1,25 @@
 const bcrypt = require('bcryptjs');
-const fs = require('fs');
-const path = require('path');
-const { pool, query } = require('./db');
+const mongoose = require('mongoose');
+const connectDB = require('./db');
+const User = require('./models/User');
+const Home = require('./models/Home');
+const Payment = require('./models/Payment');
 
 const seedData = async () => {
-    // Initialize schema first
-    try {
-        const schemaPath = path.join(__dirname, 'schema.sql');
-        const schema = fs.readFileSync(schemaPath, 'utf8');
-        await query(schema);
-        console.log('✅ Database schema initialized');
-    } catch (err) {
-        console.error('Failed to initialize database:', err);
-        throw err;
-    }
+    await connectDB();
 
     console.log('\n🌱 Seeding database...\n');
 
     // Create admin user
     const hashedPassword = await bcrypt.hash('admin123', 10);
-
     try {
-        await query(
-            'INSERT INTO users (username, password) VALUES ($1, $2) ON CONFLICT (username) DO NOTHING',
-            ['admin', hashedPassword]
-        );
-        console.log('✅ Admin user created (username: admin, password: admin123)');
+        const userExists = await User.findOne({ username: 'admin' });
+        if (!userExists) {
+            await User.create({ username: 'admin', password: hashedPassword });
+            console.log('✅ Admin user created (username: admin, password: admin123)');
+        } else {
+            console.log('ℹ️ Admin user already exists');
+        }
     } catch (err) {
         console.error('Error creating admin user:', err);
     }
@@ -52,10 +46,10 @@ const seedData = async () => {
     // Insert homes
     for (const home of homes) {
         try {
-            await query(
-                'INSERT INTO homes (home_id, customer_name, phone, set_top_box_id, monthly_amount) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (home_id) DO NOTHING',
-                [home.home_id, home.customer_name, home.phone, home.set_top_box_id, home.monthly_amount]
-            );
+            const homeExists = await Home.findOne({ home_id: home.home_id });
+            if (!homeExists) {
+                await Home.create(home);
+            }
         } catch (err) {
             console.error(`Error inserting home ${home.home_id}:`, err);
         }
@@ -74,10 +68,17 @@ const seedData = async () => {
     for (const home_id of paidHomes) {
         try {
             const home = homes.find(h => h.home_id === home_id);
-            const paidDate = new Date(currentYear, currentMonth - 1, Math.floor(Math.random() * 28) + 1).toISOString();
-            await query(
-                'INSERT INTO payments (home_id, month, year, status, paid_date, collected_amount) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (home_id, month, year) DO NOTHING',
-                [home_id, currentMonth, currentYear, 'paid', paidDate, home.monthly_amount]
+            const paidDate = new Date(currentYear, currentMonth - 1, Math.floor(Math.random() * 28) + 1);
+
+            await Payment.updateOne(
+                { home_id, month: currentMonth, year: currentYear },
+                {
+                    $set: {
+                        status: 'paid',
+                        paid_date: paidDate
+                    }
+                },
+                { upsert: true }
             );
         } catch (err) {
             console.error(`Error inserting payment for home ${home_id}:`, err);
@@ -91,7 +92,7 @@ const seedData = async () => {
     console.log('   Username: admin');
     console.log('   Password: admin123\n');
 
-    await pool.end();
+    mongoose.connection.close();
     process.exit(0);
 };
 
